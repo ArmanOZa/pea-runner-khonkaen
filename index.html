@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบบันทึกสถิติการเดิน-วิ่ง - การไฟฟ้าส่วนภูมิภาคจังหวัดขอนแก่น</title>
+    <!-- โหลด Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- โหลด React และ ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- โหลด Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Google Fonts: Sarabun & Prompt -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        pea: {
+                            purple: '#6B21A8',
+                            dark: '#4C1D95',
+                            light: '#7E22CE',
+                            gold: '#D97706',
+                            goldLight: '#FBBF24',
+                            bg: '#F8FAFC'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Sarabun', 'sans-serif'],
+                        heading: ['Prompt', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Sarabun', sans-serif; background-color: #F1F5F9; }
+        .font-heading { font-family: 'Prompt', sans-serif; }
+        .pea-gradient { background: linear-gradient(135deg, #4C1D95 0%, #6B21A8 50%, #7E22CE 100%); }
+        .gold-gradient { background: linear-gradient(135deg, #B45309 0%, #D97706 50%, #F59E0B 100%); }
+        .gold-badge { background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%); color: #92400E; border: 1px solid #FCD34D; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #F1F5F9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 pb-12">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // URL จาก Google Apps Script (Webhook)
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwctJ8j8Jes91LOb7QYy3F4dOJP4Fdjjm1JVWPpXCpYuPmCpN5Cy2fgSHJhil_w1tAF/exec";
+
+        function App() {
+            const [activeTab, setActiveTab] = useState("form");
+            const [employees, setEmployees] = useState([]);
+            const [leaderboard, setLeaderboard] = useState([]);
+            const [recentLogs, setRecentLogs] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [fetchingData, setFetchingData] = useState(true);
+            const [message, setMessage] = useState(null);
+            const [currentTime, setCurrentTime] = useState(new Date());
+
+            // Form States
+            const [empId, setEmpId] = useState("");
+            const [name, setName] = useState("");
+            const [colC, setColC] = useState("");
+            const [colE, setColE] = useState("");
+            const [pin, setPin] = useState("");
+            const [image, setImage] = useState(null);
+            const [preview, setPreview] = useState(null);
+
+            // Filter States
+            const [searchTerm, setSearchTerm] = useState("");
+
+            useEffect(() => {
+                fetchData();
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            const fetchData = async () => {
+                setFetchingData(true);
+                try {
+                    const res = await fetch(SCRIPT_URL);
+                    const data = await res.json();
+                    if (data.employees) setEmployees(data.employees);
+                    if (data.leaderboard) setLeaderboard(data.leaderboard);
+                    if (data.recentLogs) setRecentLogs(data.recentLogs);
+                } catch (err) {
+                    console.error("Error fetching data:", err);
+                } finally {
+                    setFetchingData(false);
+                }
+            };
+
+            const handleEmpIdChange = (e) => {
+                const id = e.target.value.trim();
+                setEmpId(id);
+                const found = employees.find(emp => emp.id === id);
+                if (found) {
+                    setName(found.name || "");
+                    setColC(found.colC || "");
+                    setColE(found.colE || "");
+                } else {
+                    setName("");
+                    setColC("");
+                    setColE("");
+                }
+            };
+
+            const handleImageChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setImage(reader.result);
+                        setPreview(reader.result);
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                
+                if (pin !== "1129") {
+                    setMessage({ type: 'error', text: 'รหัสยืนยันไม่ถูกต้อง กรุณาตรวจสอบรหัสความปลอดภัยอีกครั้ง' });
+                    return;
+                }
+
+                if (!image) {
+                    setMessage({ type: 'error', text: 'กรุณาแนบรูปภาพหน้าจอสถิติการเดิน-วิ่ง' });
+                    return;
+                }
+                if (!name) {
+                    setMessage({ type: 'error', text: 'ไม่พบชื่อพนักงาน กรุณาตรวจสอบรหัสพนักงานให้ถูกต้อง' });
+                    return;
+                }
+
+                setLoading(true);
+                setMessage({ type: 'info', text: 'กำลังส่งรูปภาพให้ AI อ่านค่าสถิติและบันทึกลงระบบ...' });
+
+                try {
+                    const payload = {
+                        action: "processAndSave",
+                        empId: empId,
+                        name: name,
+                        image: image
+                    };
+
+                    const response = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        setMessage({ 
+                            type: 'success', 
+                            text: `บันทึกข้อมูลสำเร็จเรียบร้อย! AI อ่านค่าได้ ${result.steps.toLocaleString()} ก้าว (อัปเดตสถิติล่าสุดแล้ว)` 
+                        });
+                        setEmpId("");
+                        setName("");
+                        setColC("");
+                        setColE("");
+                        setPin("");
+                        setImage(null);
+                        setPreview(null);
+                        fetchData(); 
+                    } else {
+                        setMessage({ type: 'error', text: result.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์: ' + error.message });
+                }
+                
+                setLoading(false);
+            };
+
+            const filteredLogs = useMemo(() => {
+                if (!searchTerm.trim()) return recentLogs;
+                const term = searchTerm.toLowerCase();
+                return recentLogs.filter(log => 
+                    log.colC_empId.toLowerCase().includes(term) ||
+                    log.colD_name.toLowerCase().includes(term) ||
+                    log.colB_date.includes(term)
+                );
+            }, [recentLogs, searchTerm]);
+
+            const formatDateThai = (date) => {
+                const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
+                return date.toLocaleDateString('th-TH', options);
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-4">
+                    {/* Header Banner - PEA Style */}
+                    <div className="pea-gradient rounded-2xl shadow-xl overflow-hidden mb-6 text-white border-b-4 border-amber-400 relative">
+                        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]"></div>
+                        
+                        <div className="relative z-10 p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+                            <div className="flex items-center space-x-4 text-center md:text-left">
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner shrink-0 mx-auto md:mx-0">
+                                    <span className="text-3xl sm:text-4xl">⚡</span>
+                                </div>
+                                <div>
+                                    <div className="inline-block gold-badge text-xs font-semibold px-3 py-1 rounded-full mb-1">
+                                        PROVINCIAL ELECTRICITY AUTHORITY
+                                    </div>
+                                    <h1 className="text-2xl sm:text-3xl font-bold font-heading tracking-wide">
+                                        การไฟฟ้าส่วนภูมิภาคจังหวัดขอนแก่น
+                                    </h1>
+                                    <p className="text-purple-200 text-sm sm:text-base mt-0.5">
+                                        ระบบบันทึกสถิติการเดิน-วิ่ง พนักงาน PEA Khon Kaen
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-xl border border-white/20 text-center min-w-[200px]">
+                                <p className="text-xs text-purple-200 font-medium">{formatDateThai(currentTime)}</p>
+                                <p className="text-2xl font-bold tracking-widest text-amber-300 font-heading mt-0.5">
+                                    {currentTime.toLocaleTimeString('th-TH')} <span className="text-xs text-white font-normal">น.</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Navigation Tabs */}
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
+                        <button 
+                            onClick={() => setActiveTab('form')}
+                            className={`py-3.5 px-2 sm:px-4 rounded-xl font-medium text-xs sm:text-sm font-heading transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 shadow-sm ${
+                                activeTab === 'form' 
+                                ? 'pea-gradient text-white shadow-md ring-2 ring-purple-400 font-semibold' 
+                                : 'bg-white text-slate-600 hover:bg-slate-100'
+                            }`}
+                        >
+                            <span className="text-lg">📝</span>
+                            <span>บันทึกสถิติ</span>
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('leaderboard')}
+                            className={`py-3.5 px-2 sm:px-4 rounded-xl font-medium text-xs sm:text-sm font-heading transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 shadow-sm ${
+                                activeTab === 'leaderboard' 
+                                ? 'pea-gradient text-white shadow-md ring-2 ring-purple-400 font-semibold' 
+                                : 'bg-white text-slate-600 hover:bg-slate-100'
+                            }`}
+                        >
+                            <span className="text-lg">🏆</span>
+                            <span>อันดับรวม</span>
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('logs')}
+                            className={`py-3.5 px-2 sm:px-4 rounded-xl font-medium text-xs sm:text-sm font-heading transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 shadow-sm ${
+                                activeTab === 'logs' 
+                                ? 'pea-gradient text-white shadow-md ring-2 ring-purple-400 font-semibold' 
+                                : 'bg-white text-slate-600 hover:bg-slate-100'
+                            }`}
+                        >
+                            <span className="text-lg">📋</span>
+                            <span>ประวัติการบันทึก</span>
+                        </button>
+                    </div>
+
+                    {/* Alert Message Box */}
+                    {message && (
+                        <div className={`p-4 mb-6 rounded-xl text-sm font-medium border flex items-start gap-3 shadow-sm ${
+                            message.type === 'error' ? 'bg-red-50 text-red-700 border-red-200' : 
+                            message.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 
+                            'bg-blue-50 text-blue-800 border-blue-200'
+                        }`}>
+                            <span className="text-xl">
+                                {message.type === 'error' ? '⚠️' : message.type === 'success' ? '✅' : 'ℹ️'}
+                            </span>
+                            <div className="pt-0.5">{message.text}</div>
+                        </div>
+                    )}
+
+                    {/* TAB 1: FORM */}
+                    {activeTab === 'form' && (
+                        <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-md border border-slate-200 max-w-xl mx-auto">
+                            <div className="border-b pb-4 mb-6 text-center sm:text-left">
+                                <h2 className="text-xl font-bold font-heading text-slate-800">กรอกข้อมูลบันทึกจำนวนก้าว</h2>
+                                <p className="text-xs sm:text-sm text-slate-500 mt-1">อัปโหลดภาพหน้าจอจากแอปพลิเคชันเดิน-วิ่ง ระบบ AI จะอ่านวันที่และจำนวนก้าวอัตโนมัติ</p>
+                            </div>
+
+                            <form onSubmit={handleSubmit} className="space-y-5">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                        รหัสพนักงาน <span className="text-red-500">*</span>
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        value={empId}
+                                        onChange={handleEmpIdChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-purple-600 focus:border-purple-600 outline-none transition-all"
+                                        placeholder="ระบุรหัสพนักงาน เช่น 501234"
+                                        required
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                        ชื่อ-นามสกุล
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        value={name}
+                                        readOnly
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 font-medium outline-none cursor-not-allowed"
+                                        placeholder="ระบบจะค้นหาและแสดงชื่อพนักงานอัตโนมัติ"
+                                    />
+                                </div>
+
+                                {/* แสดงผลตำแหน่ง (Col C) และ สังกัด (Col E) จาก Sheet Employees */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                            ตำแหน่ง
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            value={colC}
+                                            readOnly
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 font-medium outline-none cursor-not-allowed"
+                                            placeholder="ตำแหน่งพนักงาน"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                            สังกัด
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            value={colE}
+                                            readOnly
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 font-medium outline-none cursor-not-allowed"
+                                            placeholder="สังกัด / แผนก"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                        รหัสความปลอดภัย <span className="text-red-500">*</span>
+                                    </label>
+                                    <input 
+                                        type="password" 
+                                        value={pin}
+                                        onChange={(e) => setPin(e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-purple-600 outline-none tracking-widest font-mono"
+                                        placeholder="••••"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                        ภาพหน้าจอสถิติก้าวเดินของวันนี้ <span className="text-red-500">*</span>
+                                    </label>
+                                    <label className="flex flex-col items-center justify-center w-full h-60 border-2 border-dashed border-slate-300 rounded-2xl cursor-pointer bg-slate-50 hover:bg-slate-100 relative overflow-hidden transition-all group">
+                                        {preview ? (
+                                            <div className="relative w-full h-full group">
+                                                <img src={preview} alt="Preview" className="object-contain w-full h-full p-2" />
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-medium text-sm">
+                                                    เปลี่ยนรูปภาพ
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col items-center justify-center p-6 text-center">
+                                                <div className="w-14 h-14 mb-3 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                                                    📸
+                                                </div>
+                                                <p className="text-sm font-semibold text-slate-700">แตะเพื่ออัปโหลดรูปภาพ</p>
+                                                <p className="text-xs text-slate-400 mt-1">รองรับภาพถ่ายจากแอป Garmin, Strava, Apple Health ฯลฯ</p>
+                                            </div>
+                                        )}
+                                        <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                                    </label>
+                                </div>
+
+                                <button 
+                                    type="submit" 
+                                    disabled={loading}
+                                    className={`w-full py-4 rounded-xl text-white font-bold font-heading text-base shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${
+                                        loading 
+                                        ? 'bg-purple-300 cursor-not-allowed' 
+                                        : 'pea-gradient hover:opacity-95 active:scale-[0.99]'
+                                    }`}
+                                >
+                                    {loading ? (
+                                        <>
+                                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            <span>กำลังประมวลผลด้วย AI...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span>🚀</span>
+                                            <span>ส่งข้อมูลและประมวลผล</span>
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* TAB 2: LEADERBOARD */}
+                    {activeTab === 'leaderboard' && (
+                        <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4 mb-6">
+                                <div>
+                                    <h2 className="text-xl font-bold font-heading text-slate-800">อันดับสะสมรวม (Leaderboard)</h2>
+                                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">ยอดก้าวสะสมของพนักงาน การไฟฟ้าส่วนภูมิภาคจังหวัดขอนแก่น</p>
+                                </div>
+                                <div className="gold-badge px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0">
+                                    <span>🎁</span>
+                                    <span>รางวัลพิเศษสำหรับ 20 อันดับแรก</span>
+                                </div>
+                            </div>
+
+                            {fetchingData ? (
+                                <div className="py-16 text-center text-slate-400">
+                                    <div className="inline-block animate-spin text-3xl mb-2">⚡</div>
+                                    <p>กำลังโหลดข้อมูลสถิติ...</p>
+                                </div>
+                            ) : leaderboard.length === 0 ? (
+                                <div className="py-16 text-center text-slate-400">
+                                    <p className="text-4xl mb-2">🏃‍♂️</p>
+                                    <p>ยังไม่มีข้อมูลบันทึกสถิติ</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {leaderboard.map((user, index) => (
+                                        <div 
+                                            key={index} 
+                                            className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
+                                                index === 0 ? 'bg-amber-50/60 border-amber-200 shadow-sm' :
+                                                index === 1 ? 'bg-slate-50 border-slate-200' :
+                                                index === 2 ? 'bg-orange-50/50 border-orange-200' :
+                                                'bg-white border-slate-100 hover:border-slate-200'
+                                            }`}
+                                        >
+                                            <div className="flex items-center space-x-4">
+                                                <div className={`w-10 h-10 flex items-center justify-center rounded-xl font-bold font-heading text-sm shadow-sm ${
+                                                    index === 0 ? 'gold-gradient text-white ring-2 ring-amber-300' : 
+                                                    index === 1 ? 'bg-slate-400 text-white' : 
+                                                    index === 2 ? 'bg-amber-700 text-white' : 
+                                                    'bg-purple-100 text-purple-800'
+                                                }`}>
+                                                    {index + 1}
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold text-slate-800 text-sm sm:text-base">{user.name}</p>
+                                                    <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                                        <span className="text-xs text-slate-400">รหัส: <span className="font-mono">{user.id}</span></span>
+                                                        {user.colC && (
+                                                            <span className="bg-purple-50 text-purple-700 text-[11px] px-2 py-0.5 rounded border border-purple-100 font-medium">
+                                                                {user.colC}
+                                                            </span>
+                                                        )}
+                                                        {user.colE && (
+                                                            <span className="bg-slate-100 text-slate-600 text-[11px] px-2 py-0.5 rounded border border-slate-200 font-medium">
+                                                                {user.colE}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="font-bold font-heading text-base sm:text-lg text-purple-900">
+                                                    {user.steps.toLocaleString()}
+                                                </p>
+                                                <p className="text-xs text-slate-400">ก้าวสะสม</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB 3: DETAILED RECENT LOGS */}
+                    {activeTab === 'logs' && (
+                        <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4 mb-6">
+                                <div>
+                                    <h2 className="text-xl font-bold font-heading text-slate-800">ประวัติการบันทึกข้อมูลย้อนหลัง</h2>
+                                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">แสดงประวัติการบันทึกทั้งหมด</p>
+                                </div>
+                                
+                                <div className="relative min-w-[240px]">
+                                    <input 
+                                        type="text"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        placeholder="ค้นหาตามชื่อ, รหัส หรือวันที่..."
+                                        className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-purple-600 outline-none"
+                                    />
+                                    <span className="absolute left-3 top-2.5 text-slate-400 text-xs">🔍</span>
+                                </div>
+                            </div>
+
+                            {fetchingData ? (
+                                <div className="py-16 text-center text-slate-400">
+                                    <div className="inline-block animate-spin text-3xl mb-2">⚡</div>
+                                    <p>กำลังโหลดตารางข้อมูล...</p>
+                                </div>
+                            ) : filteredLogs.length === 0 ? (
+                                <div className="py-16 text-center text-slate-400">
+                                    <p className="text-4xl mb-2">📄</p>
+                                    <p>ไม่พบรายการประวัติบันทึก</p>
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto custom-scrollbar">
+                                    <table className="w-full text-left border-collapse min-w-[640px]">
+                                        <thead>
+                                            <tr className="pea-gradient text-white text-xs sm:text-sm font-heading rounded-xl">
+                                                <th className="py-3.5 px-4 rounded-l-xl font-semibold">เวลาบันทึก</th>
+                                                <th className="py-3.5 px-4 font-semibold">วันที่สถิติ</th>
+                                                <th className="py-3.5 px-4 font-semibold">รหัสพนักงาน</th>
+                                                <th className="py-3.5 px-4 font-semibold">ชื่อ-นามสกุล</th>
+                                                <th className="py-3.5 px-4 rounded-r-xl font-semibold text-right">จำนวนก้าว</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-xs sm:text-sm">
+                                            {filteredLogs.map((log, index) => (
+                                                <tr key={index} className="hover:bg-purple-50/50 transition-colors">
+                                                    <td className="py-3.5 px-4 text-slate-500 font-mono text-xs">
+                                                        {log.colA_timestamp || '-'}
+                                                    </td>
+                                                    <td className="py-3.5 px-4 font-medium text-slate-700">
+                                                        <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md text-xs font-mono border border-slate-200">
+                                                            {log.colB_date || '-'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3.5 px-4 font-mono font-semibold text-purple-900">
+                                                        {log.colC_empId}
+                                                    </td>
+                                                    <td className="py-3.5 px-4 font-medium text-slate-800">
+                                                        {log.colD_name}
+                                                    </td>
+                                                    <td className="py-3.5 px-4 text-right">
+                                                        <span className="inline-block bg-purple-100 text-purple-900 font-bold px-3 py-1 rounded-full text-xs sm:text-sm font-heading border border-purple-200">
+                                                            {parseInt(log.colE_steps || 0).toLocaleString()} ก้าว
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Footer */}
+                    <div className="text-center text-xs text-slate-400 mt-8 mb-4">
+                        <p>© การไฟฟ้าส่วนภูมิภาคจังหวัดขอนแก่น (PEA Khon Kaen) • Powered by Google Apps Script & Gemini AI</p>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
